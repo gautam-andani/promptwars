@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CultureCompass — Travel &amp; Culture Discovery</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <style>
+    .story-card { font-family: Georgia, 'Times New Roman', serif; }
+    .chip.active { background-color: #0f766e; color: #ffffff; border-color: #0f766e; }
+    .nearby-row::-webkit-scrollbar { height: 6px; }
+    .nearby-row::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    #map { height: 400px; border-radius: 1rem; z-index: 0; }
+    details > summary { list-style: none; cursor: pointer; }
+    details > summary::-webkit-details-marker { display: none; }
+    details[open] .accordion-arrow { transform: rotate(180deg); }
+    .accordion-arrow { transition: transform 0.2s ease; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-up { animation: fadeUp 0.4s ease both; }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-sky-50 text-slate-800">
+
+  <!-- Hero -->
+  <header class="max-w-5xl mx-auto px-4 pt-12 pb-6 text-center">
+    <div class="text-5xl mb-3">🧭</div>
+    <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-teal-700 via-sky-700 to-rose-600 bg-clip-text text-transparent">
+      CultureCompass
+    </h1>
+    <p class="mt-3 text-slate-600 max-w-xl mx-auto">
+      Tell us where and when — multiple AIs and live search will map the attractions,
+      hidden gems, festivals and stories waiting for you.
+    </p>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-4 pb-16">
+
+    <!-- Search form -->
+    <section class="bg-white/80 backdrop-blur rounded-2xl shadow-lg shadow-rose-100/50 p-6 sm:p-8">
+      <form id="discover-form" class="space-y-6">
+        <div class="grid sm:grid-cols-2 gap-5">
+          <div>
+            <label for="destination" class="block text-sm font-semibold text-slate-700 mb-1">Destination city</label>
+            <input id="destination" name="destination" type="text" required minlength="2" maxlength="80"
+                   placeholder="e.g. Indore, Kyoto, Lisbon…"
+                   class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-500" />
+          </div>
+          <div>
+            <label for="month" class="block text-sm font-semibold text-slate-700 mb-1">Travel month</label>
+            <select id="month" name="month"
+                    class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-500">
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label for="radius" class="block text-sm font-semibold text-slate-700 mb-1">
+            Extra travel radius: <span id="radius-label" class="text-teal-700 font-bold">100 km</span>
+          </label>
+          <input id="radius" type="range" min="0" max="500" step="10" value="100"
+                 class="w-full accent-teal-600" />
+          <p class="text-xs text-slate-500 mt-1">How far beyond the city you'd go for a great day trip.</p>
+        </div>
+
+        <div>
+          <span class="block text-sm font-semibold text-slate-700 mb-2">Interests <span class="font-normal text-slate-400">(pick up to 5)</span></span>
+          <div id="chips" class="flex flex-wrap gap-2">
+            <button type="button" data-interest="heritage"     class="chip rounded-full border border-slate-300 bg-white px-4 py-1.5 text-sm transition">🏛️ Heritage</button>
+            <button type="button" data-interest="food"         class="chip rounded-full border border-slate-300 bg-white px-4 py-1.5 text-sm transition">🍜 Food</button>
+            <button type="button" data-interest="art"          class="chip rounded-full border border-slate-300 bg-white px-4 py-1.5 text-sm transition">🎨 Art</button>
+            <button type="button" data-interest="nature"       class="chip rounded-full border border-slate-300 bg-white px-4 py-1.5 text-sm transition">🌿 Nature</button>
+            <button type="button" data-interest="spirituality" class="chip rounded-full border border-slate-300 bg-white px-4 py-1.5 text-sm transition">🕉️ Spirituality</button>
+            <button type="button" data-interest="nightlife"    class="chip rounded-full border border-slate-300 bg-white px-4 py-1.5 text-sm transition">🌙 Nightlife</button>
+          </div>
+        </div>
+
+        <button id="submit-btn" type="submit"
+                class="w-full sm:w-auto rounded-xl bg-gradient-to-r from-teal-600 to-sky-600 px-8 py-3 font-semibold text-white shadow-md transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">
+          Discover ✨
+        </button>
+      </form>
+    </section>
+
+    <!-- Error banner -->
+    <div id="error-banner" class="hidden mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-rose-700"></div>
+
+    <!-- Loading -->
+    <section id="loading" class="hidden mt-10 text-center">
+      <div class="inline-block h-10 w-10 animate-spin rounded-full border-4 border-teal-200 border-t-teal-600"></div>
+      <p id="loading-message" class="mt-4 text-slate-600 italic">Consulting local experts…</p>
+    </section>
+
+    <!-- Results -->
+    <section id="results" class="hidden mt-10 space-y-10">
+
+      <div id="degraded-banner" class="hidden rounded-xl border border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-800">
+        Stories unavailable right now — showing recommendations
+      </div>
+
+      <div class="fade-up">
+        <h2 id="results-title" class="text-2xl font-bold text-slate-800 mb-1"></h2>
+        <p id="results-subtitle" class="text-sm text-slate-500 mb-4"></p>
+        <div id="map" class="shadow-lg"></div>
+        <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+          <span><span class="inline-block h-3 w-3 rounded-full align-middle" style="background:#3b82f6"></span> Attraction</span>
+          <span><span class="inline-block h-3 w-3 rounded-full align-middle" style="background:#a855f7"></span> Hidden gem</span>
+          <span><span class="inline-block h-3 w-3 rounded-full align-middle" style="background:#f59e0b"></span> Heritage</span>
+          <span><span class="inline-block h-3 w-3 rounded-full align-middle" style="background:#14b8a6"></span> Experience</span>
+          <span><span class="inline-block h-3 w-3 rounded-full align-middle" style="background:#22c55e"></span> Nearby city</span>
+        </div>
+      </div>
+
+      <div class="fade-up">
+        <h3 class="text-xl font-bold mb-4">Top picks for your month</h3>
+        <div id="attractions-grid" class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3"></div>
+      </div>
+
+      <div id="stories-section" class="fade-up">
+        <h3 class="text-xl font-bold mb-4">Your stories</h3>
+        <div id="stories-list" class="space-y-5"></div>
+      </div>
+
+      <div id="events-section" class="fade-up">
+        <h3 class="text-xl font-bold mb-4">Happening this month</h3>
+        <ul id="events-list" class="space-y-3"></ul>
+      </div>
+
+      <div id="seasonal-section" class="fade-up">
+        <h3 class="text-xl font-bold mb-4">Same place, another season</h3>
+        <div id="seasonal-list" class="space-y-3"></div>
+      </div>
+
+      <div id="nearby-section" class="fade-up">
+        <h3 class="text-xl font-bold mb-1">Worth the extra kilometers</h3>
+        <p class="text-sm text-slate-500 mb-4">Great side trips within your travel radius.</p>
+        <div id="nearby-list" class="nearby-row flex gap-4 overflow-x-auto pb-3"></div>
+      </div>
+
+    </section>
+  </main>
+
+  <footer class="pb-8 text-center text-xs text-slate-400">
+    CultureCompass — powered by Gemini, Groq &amp; OpenStreetMap
+  </footer>
+
+  <script>
+    "use strict";
+
+    const MONTHS = ["January","February","March","April","May","June",
+                    "July","August","September","October","November","December"];
+    const LOADING_MESSAGES = [
+      "Consulting local experts…",
+      "Searching festivals…",
+      "Comparing recommendations…",
+      "Writing your story…",
+      "Pinning the map…",
+    ];
+    const PIN_COLORS = {
+      attraction: "#3b82f6",
+      hidden_gem: "#a855f7",
+      heritage: "#f59e0b",
+      experience: "#14b8a6",
+      nearby: "#22c55e",
+    };
+    const TYPE_BADGES = {
+      attraction: { label: "Attraction", classes: "bg-blue-100 text-blue-700" },
+      hidden_gem: { label: "Hidden gem", classes: "bg-purple-100 text-purple-700" },
+      heritage:   { label: "Heritage",   classes: "bg-amber-100 text-amber-700" },
+      experience: { label: "Experience", classes: "bg-teal-100 text-teal-700" },
+    };
+    const PLACEHOLDER_EMOJI = {
+      attraction: "🌆", hidden_gem: "💎", heritage: "🏛️", experience: "🎭",
+    };
+    const MAX_INTERESTS = 5;
+
+    const form = document.getElementById("discover-form");
+    const submitBtn = document.getElementById("submit-btn");
+    const monthSelect = document.getElementById("month");
+    const radiusInput = document.getElementById("radius");
+    const radiusLabel = document.getElementById("radius-label");
+    const chipsContainer = document.getElementById("chips");
+    const loadingEl = document.getElementById("loading");
+    const loadingMessageEl = document.getElementById("loading-message");
+    const resultsEl = document.getElementById("results");
+    const errorBanner = document.getElementById("error-banner");
+
+    let map = null;
+    let markerLayer = null;
+    let loadingTimer = null;
+
+    // --- Form setup -------------------------------------------------------
+    MONTHS.forEach((month) => {
+      const option = document.createElement("option");
+      option.value = month;
+      option.textContent = month;
+      monthSelect.appendChild(option);
+    });
+    monthSelect.value = MONTHS[new Date().getMonth()];
+
+    radiusInput.addEventListener("input", () => {
+      radiusLabel.textContent = `${radiusInput.value} km`;
+    });
+
+    chipsContainer.addEventListener("click", (event) => {
+      const chip = event.target.closest(".chip");
+      if (!chip) return;
+      const activeCount = chipsContainer.querySelectorAll(".chip.active").length;
+      if (!chip.classList.contains("active") && activeCount >= MAX_INTERESTS) return;
+      chip.classList.toggle("active");
+    });
+
+    // --- Helpers ----------------------------------------------------------
+    function esc(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function setLoading(active) {
+      submitBtn.disabled = active;
+      loadingEl.classList.toggle("hidden", !active);
+      if (active) {
+        resultsEl.classList.add("hidden");
+        errorBanner.classList.add("hidden");
+        let index = 0;
+        loadingMessageEl.textContent = LOADING_MESSAGES[0];
+        loadingTimer = setInterval(() => {
+          index = (index + 1) % LOADING_MESSAGES.length;
+          loadingMessageEl.textContent = LOADING_MESSAGES[index];
+        }, 2200);
+      } else if (loadingTimer) {
+        clearInterval(loadingTimer);
+        loadingTimer = null;
+      }
+    }
+
+    function showError(message) {
+      errorBanner.textContent = message;
+      errorBanner.classList.remove("hidden");
+    }
+
+    // --- Rendering --------------------------------------------------------
+    function renderMap(data) {
+      if (!map) {
+        map = L.map("map", { scrollWheelZoom: false });
+        // Esri World Street Map: free, no API key, and labels major places in
+        // English/romanized text (default OSM tiles use local-language names).
+        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+          maxZoom: 19,
+          attribution: 'Tiles &copy; Esri &mdash; Sources: Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        }).addTo(map);
+        markerLayer = L.layerGroup().addTo(map);
+      }
+      markerLayer.clearLayers();
+      const bounds = [];
+
+      (data.attractions || []).forEach((place) => {
+        if (typeof place.lat !== "number" || typeof place.lon !== "number") return;
+        const color = PIN_COLORS[place.type] || PIN_COLORS.attraction;
+        L.circleMarker([place.lat, place.lon], {
+          radius: 9, color: "#ffffff", weight: 2, fillColor: color, fillOpacity: 0.95,
+        }).bindPopup(
+          `<strong>${esc(place.name)}</strong><br><span class="text-sm">${esc(place.why_this_month)}</span>`
+        ).addTo(markerLayer);
+        bounds.push([place.lat, place.lon]);
+      });
+
+      (data.nearby_recommendations || []).forEach((city) => {
+        if (typeof city.lat !== "number" || typeof city.lon !== "number") return;
+        L.circleMarker([city.lat, city.lon], {
+          radius: 10, color: "#ffffff", weight: 2, fillColor: PIN_COLORS.nearby, fillOpacity: 0.95,
+        }).bindPopup(
+          `<strong>${esc(city.city)}</strong><br><span class="text-sm">${esc(city.distance_km)} km away — ${esc((city.highlights || []).join(", "))}</span>`
+        ).addTo(markerLayer);
+        bounds.push([city.lat, city.lon]);
+      });
+
+      setTimeout(() => {
+        map.invalidateSize();
+        if (bounds.length) map.fitBounds(bounds, { padding: [36, 36], maxZoom: 12 });
+        else map.setView([20, 0], 2);
+      }, 60);
+    }
+
+    function attractionCard(place) {
+      const badge = TYPE_BADGES[place.type] || TYPE_BADGES.attraction;
+      const emoji = PLACEHOLDER_EMOJI[place.type] || "🌆";
+      const media = place.photo_url
+        ? `<img src="${esc(place.photo_url)}" alt="${esc(place.name)}" loading="lazy"
+                class="h-40 w-full object-cover"
+                onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+           <div class="h-40 w-full bg-gradient-to-br from-teal-100 to-sky-200 items-center justify-center text-5xl" style="display:none">${emoji}</div>`
+        : `<div class="h-40 w-full bg-gradient-to-br from-teal-100 to-sky-200 flex items-center justify-center text-5xl">${emoji}</div>`;
+      return `
+        <article class="overflow-hidden rounded-2xl bg-white shadow-md transition hover:shadow-lg">
+          ${media}
+          <div class="p-4 space-y-2">
+            <div class="flex items-start justify-between gap-2">
+              <h4 class="font-bold text-slate-800 leading-snug">${esc(place.name)}</h4>
+              <span class="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${badge.classes}">${badge.label}</span>
+            </div>
+            <p class="text-sm text-slate-600">${esc(place.why_this_month)}</p>
+            ${place.authenticity_tip
+              ? `<p class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">💡 ${esc(place.authenticity_tip)}</p>`
+              : ""}
+          </div>
+        </article>`;
+    }
+
+    function renderResults(data) {
+      document.getElementById("results-title").textContent =
+        `${data.destination} in ${data.month}`;
+      document.getElementById("results-subtitle").textContent = data.search_used
+        ? "Cross-checked with live web results."
+        : "Curated by multiple AI travel guides for your month.";
+      document.getElementById("degraded-banner").classList.toggle("hidden", !data.degraded);
+
+      document.getElementById("attractions-grid").innerHTML =
+        (data.attractions || []).map(attractionCard).join("") ||
+        `<p class="text-slate-500">No attractions found.</p>`;
+
+      const stories = data.stories || [];
+      document.getElementById("stories-section").classList.toggle("hidden", stories.length === 0);
+      document.getElementById("stories-list").innerHTML = stories.map((story) => `
+        <article class="story-card rounded-2xl border border-rose-100 bg-white/90 p-6 shadow-md">
+          <h4 class="text-lg font-bold text-rose-800">${esc(story.place)}</h4>
+          <p class="mt-2 leading-relaxed text-slate-700">${esc(story.narrative)}</p>
+        </article>`).join("");
+
+      const events = data.local_events || [];
+      document.getElementById("events-section").classList.toggle("hidden", events.length === 0);
+      document.getElementById("events-list").innerHTML = events.map((ev) => `
+        <li class="rounded-xl bg-white p-4 shadow-sm">
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <span class="font-semibold text-slate-800">🎉 ${esc(ev.name)}</span>
+            <span class="text-xs font-medium text-teal-700">${esc(ev.dates)}</span>
+          </div>
+          <p class="mt-1 text-sm text-slate-600">${esc(ev.description)}</p>
+        </li>`).join("");
+
+      const seasons = data.seasonal_alternatives || [];
+      document.getElementById("seasonal-section").classList.toggle("hidden", seasons.length === 0);
+      document.getElementById("seasonal-list").innerHTML = seasons.map((season) => `
+        <details class="rounded-xl bg-white p-4 shadow-sm">
+          <summary class="flex items-center justify-between font-semibold text-slate-800">
+            <span>🍂 ${esc(season.season)}</span>
+            <span class="accordion-arrow text-slate-400">▾</span>
+          </summary>
+          <p class="mt-2 text-sm text-slate-600">${esc(season.why)}</p>
+          ${(season.highlights || []).length
+            ? `<ul class="mt-2 list-disc pl-5 text-sm text-slate-600">
+                 ${(season.highlights || []).map((h) => `<li>${esc(h)}</li>`).join("")}
+               </ul>`
+            : ""}
+        </details>`).join("");
+
+      const nearby = data.nearby_recommendations || [];
+      document.getElementById("nearby-section").classList.toggle("hidden", nearby.length === 0);
+      document.getElementById("nearby-list").innerHTML = nearby.map((city) => `
+        <article class="w-64 shrink-0 rounded-2xl bg-white p-4 shadow-md">
+          <div class="flex items-baseline justify-between gap-2">
+            <h4 class="font-bold text-slate-800">🚗 ${esc(city.city)}</h4>
+            <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">${esc(city.distance_km)} km</span>
+          </div>
+          <ul class="mt-2 list-disc pl-5 text-sm text-slate-600">
+            ${(city.highlights || []).map((h) => `<li>${esc(h)}</li>`).join("")}
+          </ul>
+        </article>`).join("");
+
+      resultsEl.classList.remove("hidden");
+      renderMap(data);
+      resultsEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    // --- Submit -----------------------------------------------------------
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const interests = Array.from(chipsContainer.querySelectorAll(".chip.active"))
+        .map((chip) => chip.dataset.interest);
+      const body = {
+        destination: document.getElementById("destination").value.trim(),
+        travel_month: monthSelect.value,
+        extra_radius_km: Number(radiusInput.value),
+        interests,
+      };
+
+      setLoading(true);
+      try {
+        const response = await fetch("/api/discover", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (response.status === 429) {
+          throw new Error("You're exploring fast! Please wait a minute before searching again.");
+        }
+        if (response.status === 502) {
+          throw new Error("Our AI travel experts are unavailable right now. Please try again shortly.");
+        }
+        if (response.status === 422) {
+          throw new Error("Please check your inputs — destination and month look invalid.");
+        }
+        if (!response.ok) {
+          throw new Error("Something went wrong. Please try again.");
+        }
+        renderResults(await response.json());
+      } catch (err) {
+        showError(err instanceof Error && err.message
+          ? err.message
+          : "Something went wrong. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    });
+  </script>
+</body>
+</html>
